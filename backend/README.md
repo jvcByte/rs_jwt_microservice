@@ -60,10 +60,10 @@ The server starts on `http://127.0.0.1:8080` by default.
 
 ### User Registration
 ```bash
-curl -X POST http://localhost:8080/auth/register \
+curl -X POST http://localhost:8080/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{
-    "username": "johndoe",
+    "name": "johndoe",
     "email": "john@example.com",
     "password": "securepassword123"
   }'
@@ -71,7 +71,7 @@ curl -X POST http://localhost:8080/auth/register \
 
 ### User Login
 ```bash
-curl -X POST http://localhost:8080/auth/login \
+curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "john@example.com",
@@ -96,7 +96,7 @@ Response:
 
 ### Access Protected Endpoint
 ```bash
-curl -X GET http://localhost:8080/users/me \
+curl -X GET http://localhost:8080/api/auth/me \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
