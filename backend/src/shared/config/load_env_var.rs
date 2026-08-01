@@ -1,6 +1,8 @@
 use std::env;
 use std::sync::OnceLock;
 
+use crate::log_warn;
+
 /// Authentication configuration — loaded once at startup via `init()`.
 #[derive(Clone, Debug)]
 pub struct JwtConfig {
@@ -77,4 +79,17 @@ impl EnvVariables {
             .get()
             .expect("EnvVariables not initialized — call EnvVariables::init() at startup")
     }
+}
+
+pub fn load_env() {
+    if let Err(e) = dotenvy::dotenv() {
+        // replace `dotenvy::dotenv()` with `dotenvy::from_filename(".env.local")` To Load from a specific file
+        log_warn!("No .env Loaded, Using process env: {e}")
+    };
+}
+
+pub fn init_vars() {
+    load_env();
+    JwtConfig::init();
+    EnvVariables::init();
 }

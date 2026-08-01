@@ -34,6 +34,7 @@ jsonwebtoken = { version = "11.0.0", features = ["rust_crypto"] }
 chrono = "0.4.45"
 
 # Async runtime
+tokio = "1.53.1"
 futures = "0.3.33"
 
 # Environment variables
