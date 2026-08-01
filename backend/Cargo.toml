@@ -1,26 +1,44 @@
 [package]
-name = "actix_web_template_microservice"
+name = "rs_jwt_microservice"
 version = "0.1.0"
 edition = "2024"
-description = ""
+description = "A production-ready REST API microservice template built with Rust's Actix Web framework"
 license = "MIT OR Apache-2.0"
-repository = ""
-authors = ["jvcByte: jvc8463@gmail.com"]
+repository = "https://github.com/jvcByte/rs_jwt_microservice"
+authors = ["jvcByte <jvc8463@gmail.com>"]
 
 [dependencies]
+# Web Framework
 actix-cors = "0.7.1"
 actix-web = "4.13.0"
-argon2 = "0.5.3"
-chrono = "0.4.44"
-dotenvy = "0.15.7"
 
-entity = {path = "entity"}
-env_logger = "0.11.9"
-futures = "0.3.32"
-jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
-log = "0.4.29"
-migration = {path = "migration"}
+# Database
+entity = {path = "../database/entity"}
+migration = {path = "../database/migration"}
 sea-orm = "1.1.19"
+
+# Serialization
 serde = "1.0.228"
 serde_json = "1.0.149"
+
+# UUID support
 uuid = { version = "1.22.0", features = ["v4"] }
+
+# Password hashing
+argon2 = "0.5.3"
+
+# JWT
+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
+
+# Time handling
+chrono = "0.4.44"
+
+# Async runtime
+futures = "0.3.32"
+
+# Environment variables
+dotenvy = "0.15.7"
+
+# Logging
+log = "0.4.29"
+env_logger = "0.11.9"

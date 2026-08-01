@@ -22,7 +22,7 @@ static ENV_VARIABLES: OnceLock<EnvVariables> = OnceLock::new();
 impl JwtConfig {
     /// Call once at application startup (in `main`). Panics if required vars are missing.
     pub fn init() {
-        let secret = env::var("JWT_SECRET").expect(".env: JWT_SECRET must be set");
+        let secret = env::var("JWT_SECRET").expect("[.env]: JWT_SECRET must be set");
 
         let access_exp_minutes = match env::var("JWT_EXP_MINUTES") {
             Ok(v) => v.parse::<i64>().unwrap_or_else(|_| {

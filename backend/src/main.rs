@@ -30,14 +30,7 @@ async fn main() -> std::io::Result<()> {
 
     // Initialize DB connection via the postgres module. This requires the
     // `DATABASE_URL` environment variable to be set. No secrets are hardcoded here.
-    let db = match postgres::init_db().await {
-        Ok(db) => db,
-        Err(e) => {
-            error!("failed to initialize database: {}", e);
-            // Exit with non-zero status so orchestrators/CI notice startup failure.
-            std::process::exit(1);
-        }
-    };
+    let db = postgres::init_db_with_migrations().await;
     if let Err(e) = Migrator::up(&db, None).await {
         error!("failed to run migrations: {}", e);
         std::process::exit(1);
