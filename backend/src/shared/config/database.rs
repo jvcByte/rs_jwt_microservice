@@ -52,8 +52,8 @@ pub async fn init_db() -> Result<DatabaseConnection, Box<dyn Error + Send + Sync
         .min_connections(1)
         .connect_timeout(Duration::from_secs(8))
         .acquire_timeout(Duration::from_secs(8))
-        .idle_timeout(Duration::from_secs(8))
-        .max_lifetime(Duration::from_secs(8))
+        .idle_timeout(Duration::from_secs(600))
+        .max_lifetime(Duration::from_secs(1800))
         .sqlx_logging(true)
         .sqlx_logging_level(log::LevelFilter::Debug);
 

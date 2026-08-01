@@ -1,5 +1,5 @@
 use crate::shared::config::app_state::AppState;
-use crate::shared::config::postgres::check_connection;
+use crate::shared::config::database::check_connection;
 use actix_web::{HttpResponse, Responder, web};
 
 pub async fn app_details() -> impl Responder {

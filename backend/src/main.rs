@@ -5,7 +5,7 @@ use crate::api::home::routes::home_routes;
 use crate::api::routes::routes;
 
 use crate::shared::config::load_env_var::{EnvVariables, JwtConfig};
-use crate::shared::config::{app_state::AppState, postgres};
+use crate::shared::config::{app_state::AppState, database};
 use actix_cors::Cors;
 use actix_web::http::header;
 use actix_web::middleware::NormalizePath;
@@ -30,7 +30,7 @@ async fn main() -> std::io::Result<()> {
 
     // Initialize DB connection via the postgres module. This requires the
     // `DATABASE_URL` environment variable to be set. No secrets are hardcoded here.
-    let db = postgres::init_db_with_migrations().await;
+    let db = database::init_db_with_migrations().await;
     if let Err(e) = Migrator::up(&db, None).await {
         error!("failed to run migrations: {}", e);
         std::process::exit(1);
