@@ -1,1 +1,1 @@
-pub use entity::users::{User, user};
+pub use entity::users::*;

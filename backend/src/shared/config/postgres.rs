@@ -11,27 +11,28 @@ use std::time::Duration;
 pub async fn create_database_if_not_exists() -> Result<(), Box<dyn Error + Send + Sync>> {
     let database_url = EnvVariables::get().db_url.clone();
 
-    // split off the db name (last "/segment") and swap in "postgres" to connect
     let (base_url, db_name) = database_url.rsplit_once('/').unwrap();
     let admin_url = format!("{}/postgres", base_url);
 
     let db = Database::connect(admin_url).await?;
 
-    let exists = db
-        .query_one(Statement::from_string(
-            DbBackend::Postgres,
-            format!("SELECT 1 FROM pg_database WHERE datname = '{}'", db_name),
-        ))
-        .await?
-        .is_some();
+    let stmt = Statement::from_string(
+        DbBackend::Postgres,
+        format!("SELECT 1 FROM pg_database WHERE datname = '{}'", db_name),
+    );
+
+    let exists = db.query_one_raw(stmt).await?.is_some();
 
     if !exists {
         info!("❎ Database '{}' not found, creating it ❎", db_name);
-        db.execute(Statement::from_string(
+
+        let stmt = Statement::from_string(
             DbBackend::Postgres,
             format!("CREATE DATABASE \"{}\"", db_name),
-        ))
-        .await?;
+        );
+
+        db.execute_raw(stmt).await?;
+
         info!("✅ Database '{}' created ✅", db_name);
     }
 

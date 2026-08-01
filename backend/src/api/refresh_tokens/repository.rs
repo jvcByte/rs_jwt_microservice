@@ -1,4 +1,4 @@
-use crate::shared::models::refresh_tokens::{RefreshToken, refresh_token};
+use crate::shared::models::refresh_tokens;
 use chrono::Utc;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{
@@ -24,26 +24,28 @@ impl RefreshTokenRepository {
         user_id: Uuid,
         token: String,
         expires_at: Option<DateTimeWithTimeZone>,
-    ) -> Result<refresh_token::Model, DbErr> {
+    ) -> Result<refresh_tokens::Model, DbErr> {
         let id = Uuid::new_v4();
-        let active = refresh_token::ActiveModel {
+        let active = refresh_tokens::ActiveModel {
             id: Set(id),
             user_id: Set(user_id),
             token: Set(token),
-            token_version: Set(0),
+            token_version: Set(Some(0)),
             revoked: Set(false),
             expires_at: Set(expires_at),
             created_at: Set(Some(Utc::now().into())),
         };
 
-        let inserted = RefreshToken::insert(active).exec_with_returning(db).await?;
+        let inserted = refresh_tokens::Entity::insert(active)
+            .exec_with_returning(db)
+            .await?;
         Ok(inserted)
     }
 
     pub async fn update(
         db: &DatabaseConnection,
-        model: refresh_token::ActiveModel,
-    ) -> Result<refresh_token::Model, sea_orm::DbErr> {
+        model: refresh_tokens::ActiveModel,
+    ) -> Result<refresh_tokens::Model, sea_orm::DbErr> {
         let updated = model.update(db).await?;
         Ok(updated)
     }
@@ -51,9 +53,9 @@ impl RefreshTokenRepository {
     pub async fn find_by_user_id(
         db: &DatabaseConnection,
         user_id: Uuid,
-    ) -> Result<Option<refresh_token::Model>, DbErr> {
-        RefreshToken::find()
-            .filter(refresh_token::Column::UserId.eq(user_id.to_owned()))
+    ) -> Result<Option<refresh_tokens::Model>, DbErr> {
+        refresh_tokens::Entity::find()
+            .filter(refresh_tokens::Column::UserId.eq(user_id.to_owned()))
             .one(db)
             .await
     }
@@ -64,9 +66,9 @@ impl RefreshTokenRepository {
         db: &DatabaseConnection,
         user_id: Uuid,
     ) -> Result<bool, DbErr> {
-        let opt = RefreshToken::find()
-            .filter(refresh_token::Column::UserId.eq(user_id.to_owned()))
-            .filter(refresh_token::Column::Revoked.eq(false))
+        let opt = refresh_tokens::Entity::find()
+            .filter(refresh_tokens::Column::UserId.eq(user_id.to_owned()))
+            .filter(refresh_tokens::Column::Revoked.eq(false))
             .one(db)
             .await?;
         Ok(opt.is_some())
@@ -76,9 +78,9 @@ impl RefreshTokenRepository {
     /// Used for token verification since Argon2 hashes can't be looked up directly.
     pub async fn find_all_active(
         db: &DatabaseConnection,
-    ) -> Result<Vec<refresh_token::Model>, DbErr> {
-        RefreshToken::find()
-            .filter(refresh_token::Column::Revoked.eq(false))
+    ) -> Result<Vec<refresh_tokens::Model>, DbErr> {
+        refresh_tokens::Entity::find()
+            .filter(refresh_tokens::Column::Revoked.eq(false))
             .all(db)
             .await
     }
@@ -87,9 +89,9 @@ impl RefreshTokenRepository {
     pub async fn revoke_by_id(
         db: &DatabaseConnection,
         id: Uuid,
-    ) -> Result<refresh_token::Model, DbErr> {
-        if let Some(model) = RefreshToken::find_by_id(id).one(db).await? {
-            let mut active: refresh_token::ActiveModel = model.into();
+    ) -> Result<refresh_tokens::Model, DbErr> {
+        if let Some(model) = refresh_tokens::Entity::find_by_id(id).one(db).await? {
+            let mut active: refresh_tokens::ActiveModel = model.into();
             active.revoked = Set(true);
             let updated = active.update(db).await?;
             Ok(updated)
@@ -103,14 +105,14 @@ impl RefreshTokenRepository {
 
     /// Revoke all refresh tokens for a given user. Returns the number of tokens revoked.
     pub async fn revoke_by_user(db: &DatabaseConnection, user_id: Uuid) -> Result<u64, DbErr> {
-        let tokens = RefreshToken::find()
-            .filter(refresh_token::Column::UserId.eq(user_id))
+        let tokens = refresh_tokens::Entity::find()
+            .filter(refresh_tokens::Column::UserId.eq(user_id))
             .all(db)
             .await?;
 
         let mut count: u64 = 0;
         for t in tokens.into_iter() {
-            let mut active: refresh_token::ActiveModel = t.into();
+            let mut active: refresh_tokens::ActiveModel = t.into();
             // `ActiveValue<T>` provides `unwrap()` to extract the inner value.
             // Use `unwrap()` here to obtain the current `bool` for `revoked`.
             if !active.revoked.clone().unwrap() {
@@ -128,7 +130,7 @@ impl RefreshTokenRepository {
     /// Note: This is a simple cleanup implemented in Rust to avoid DB-specific datetime
     /// comparisons. For large datasets consider a DB-side query to delete expired rows.
     pub async fn delete_expired(db: &DatabaseConnection) -> Result<u64, DbErr> {
-        let tokens = RefreshToken::find().all(db).await?;
+        let tokens = refresh_tokens::Entity::find().all(db).await?;
         let mut deleted: u64 = 0;
         let now_ts = Utc::now().timestamp();
 
@@ -137,7 +139,7 @@ impl RefreshTokenRepository {
                 // DateTimeWithTimeZone should expose `timestamp()` like chrono types.
                 // If using a different datetime type, adjust accordingly.
                 if exp.timestamp() < now_ts {
-                    let res = RefreshToken::delete_by_id(t.id).exec(db).await?;
+                    let res = refresh_tokens::Entity::delete_by_id(t.id).exec(db).await?;
                     deleted += res.rows_affected;
                 }
             }

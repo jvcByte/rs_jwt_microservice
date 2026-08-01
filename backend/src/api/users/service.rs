@@ -3,8 +3,8 @@ use crate::api::users::dto::{CreateUser, UpdateUser, UserResponse};
 use crate::api::users::repository::UserRepository;
 use crate::shared::config::load_env_var::JwtConfig;
 use crate::shared::errors::api_errors::ApiError;
-use crate::shared::models::refresh_tokens::refresh_token::ActiveModel as RefreshTokenActiveModel;
-use crate::shared::models::users::user::ActiveModel;
+use crate::shared::models::refresh_tokens::ActiveModel as RefreshTokenActiveModel;
+use crate::shared::models::users::ActiveModel;
 use crate::shared::utils::auth_utils::{create_jwt, hash_password, verify_password};
 use chrono::Utc;
 use sea_orm::{DatabaseConnection, Set};
@@ -63,7 +63,7 @@ impl UserService {
             name: Set(input.name),
             email: Set(input.email),
             password_hash: Set(password_hash),
-            is_active: Set(true),
+            is_active: Set(Some(true)),
             created_at: Set(Some(Utc::now().into())),
             ..Default::default()
         };
@@ -109,7 +109,7 @@ impl UserService {
 
         // Extract password_hash and token_version directly (concrete types in entity)
         let stored_hash: String = user.password_hash;
-        let tv: i32 = refresh_token.token_version;
+        let tv: i32 = refresh_token.token_version.unwrap_or(0);
 
         // Verify password
         let ok = verify_password(&stored_hash, password)?;
@@ -240,8 +240,10 @@ impl UserService {
             .map_err(|_| ApiError::InternalError("DB error".to_string()))?
             .ok_or_else(|| ApiError::NotFound(format!("User {} not found", id)))?;
 
+        let tk_version = refresh_token.token_version.unwrap_or(0);
+
         let mut active: RefreshTokenActiveModel = refresh_token.into();
-        active.token_version = Set(active.token_version.unwrap() + 1);
+        active.token_version = Set(Some(tk_version + 1));
 
         RefreshTokenRepository::update(db, active)
             .await

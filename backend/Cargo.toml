@@ -10,35 +10,35 @@ authors = ["jvcByte <jvc8463@gmail.com>"]
 [dependencies]
 # Web Framework
 actix-cors = "0.7.1"
-actix-web = "4.13.0"
+actix-web = "4.14.0"
 
 # Database
 entity = {path = "../database/entity"}
 migration = {path = "../database/migration"}
-sea-orm = "1.1.19"
+sea-orm = "2.0.0"
 
 # Serialization
-serde = "1.0.228"
-serde_json = "1.0.149"
+serde = "1.0.229"
+serde_json = "1.0.151"
 
 # UUID support
-uuid = { version = "1.22.0", features = ["v4"] }
+uuid = { version = "1.24.0", features = ["v4"] }
 
 # Password hashing
 argon2 = "0.5.3"
 
 # JWT
-jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
+jsonwebtoken = { version = "11.0.0", features = ["rust_crypto"] }
 
 # Time handling
-chrono = "0.4.44"
+chrono = "0.4.45"
 
 # Async runtime
-futures = "0.3.32"
+futures = "0.3.33"
 
 # Environment variables
 dotenvy = "0.15.7"
 
 # Logging
-log = "0.4.29"
-env_logger = "0.11.9"
+log = "0.4.33"
+env_logger = "0.11.11"

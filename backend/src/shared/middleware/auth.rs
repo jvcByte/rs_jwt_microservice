@@ -1,5 +1,5 @@
 use crate::api::auth::repository::RefreshTokenRepository;
-use crate::shared::models::refresh_tokens::{RefreshToken, refresh_token};
+use crate::shared::models::refresh_tokens;
 use actix_web::{Error, FromRequest, HttpRequest, dev::Payload, error, http::header, web};
 use futures::future::LocalBoxFuture;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -114,7 +114,7 @@ impl FromRequest for AuthenticatedUser {
             // We query the entity defined in the `entity` crate. The repository pattern elsewhere wraps these calls;
             // here we query directly for simplicity. This requires the `entity` crate to be present in the workspace.
             let db = &state.db;
-            let user = match entity::users::User::find_by_id(user_id).one(db).await {
+            let user = match entity::users::Entity::find_by_id(user_id).one(db).await {
                 Ok(opt) => opt,
                 Err(err) => {
                     return Err(AuthenticatedUser::err_unauthorized(err.to_string()));
@@ -129,8 +129,8 @@ impl FromRequest for AuthenticatedUser {
             // 8) Lookup token_version in DB
             // We query the entity defined in the `entity` crate. The repository pattern elsewhere wraps these calls;
             // here we query directly for simplicity. This requires the `entity` crate to be present in the workspace.
-            let refresh_token = match RefreshToken::find()
-                .filter(refresh_token::Column::UserId.eq(user_id.to_owned()))
+            let refresh_token = match refresh_tokens::Entity::find()
+                .filter(refresh_tokens::Column::UserId.eq(user_id.to_owned()))
                 .one(db)
                 .await
             {
@@ -157,7 +157,7 @@ impl FromRequest for AuthenticatedUser {
             // dead-code warnings (jsonwebtoken already validates expiry during decode).
             if let Some(token_tv) = Some(token_data.claims.tv) {
                 // `user.token_version` is stored on the user model (i32).
-                if token_tv != tk.token_version {
+                if Some(token_tv) != tk.token_version {
                     return Err(AuthenticatedUser::err_unauthorized(
                         "Token has been revoked",
                     ));

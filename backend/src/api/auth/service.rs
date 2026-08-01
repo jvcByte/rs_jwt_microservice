@@ -81,7 +81,11 @@ impl AuthService {
             .ok_or_else(|| ApiError::NotFound("Token Not Found".into()))?;
 
         let cfg = JwtConfig::get();
-        let access_token = create_jwt(record.user_id, refresh_token.token_version, &cfg)?;
+        let access_token = create_jwt(
+            record.user_id,
+            refresh_token.token_version.unwrap_or(0),
+            &cfg,
+        )?;
 
         // Create a new refresh token and persist it, then revoke the old one.
         let new_plain = generate_refresh_token();
