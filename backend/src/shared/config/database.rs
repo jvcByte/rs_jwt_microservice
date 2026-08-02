@@ -11,14 +11,27 @@ use std::time::Duration;
 pub async fn create_database_if_not_exists() -> Result<(), Box<dyn Error + Send + Sync>> {
     let database_url = EnvVariables::get().db_url.clone();
 
-    let (base_url, db_name) = database_url.rsplit_once('/').unwrap();
-    let admin_url = format!("{}/postgres", base_url);
+    let (base_url, db_name) = database_url
+        .rsplit_once('/')
+        .ok_or("Invalid DATABASE_URL: missing database name")?;
 
+    // Validate db_name to prevent SQL injection — only allow alphanumeric, underscores, hyphens.
+    if !db_name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+        return Err(format!(
+            "Invalid database name '{}': only alphanumeric characters, underscores, and hyphens are allowed",
+            db_name
+        )
+        .into());
+    }
+
+    let admin_url = format!("{}/postgres", base_url);
     let db = Database::connect(admin_url).await?;
 
-    let stmt = Statement::from_string(
+    // Use a parameterized query for the existence check
+    let stmt = Statement::from_sql_and_values(
         DbBackend::Postgres,
-        format!("SELECT 1 FROM pg_database WHERE datname = '{}'", db_name),
+        "SELECT 1 FROM pg_database WHERE datname = $1",
+        [db_name.into()],
     );
 
     let exists = db.query_one_raw(stmt).await?.is_some();
@@ -26,11 +39,12 @@ pub async fn create_database_if_not_exists() -> Result<(), Box<dyn Error + Send 
     if !exists {
         info!("❎ Database '{}' not found, creating it ❎", db_name);
 
+        // CREATE DATABASE cannot be parameterized in PostgreSQL, but db_name is
+        // validated above to contain only safe characters.
         let stmt = Statement::from_string(
             DbBackend::Postgres,
             format!("CREATE DATABASE \"{}\"", db_name),
         );
-
         db.execute_raw(stmt).await?;
 
         info!("✅ Database '{}' created ✅", db_name);

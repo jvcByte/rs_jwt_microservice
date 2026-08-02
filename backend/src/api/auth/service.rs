@@ -2,152 +2,128 @@ use crate::api::auth::repository::RefreshTokenRepository;
 use crate::shared::config::load_env_var::JwtConfig;
 use crate::shared::errors::api_errors::ApiError;
 use crate::shared::utils::auth_utils::{
-    create_jwt, generate_refresh_token, is_thesame, refresh_expiry_timestamp,
+    create_jwt, generate_refresh_token, hash_refresh_token, refresh_expiry_timestamp,
+    verify_refresh_token,
 };
 use chrono::Utc;
 use sea_orm::DatabaseConnection;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use uuid::Uuid;
 
-/// Service layer encapsulating refresh-token and auth-related helpers.
-///
-/// This keeps higher-level token logic out of the HTTP handlers so the handlers
-/// can remain thin and focused on request/response concerns.
 pub struct AuthService;
 
 impl AuthService {
-    /// Create a new opaque refresh token, persist its hash, and return the plain token.
+    /// Create a new opaque refresh token, persist its HMAC-SHA256 hash, and return the plain token.
     pub async fn create_refresh_for_user(
         db: &DatabaseConnection,
         user_id: Uuid,
     ) -> Result<String, ApiError> {
         let cfg = JwtConfig::get();
         let plain = generate_refresh_token();
-        let refresh_token = plain.clone();
-        // let hash = hash_refresh_token(&plain)?;
+        let token_hash = hash_refresh_token(&plain, cfg)?;
+
         let expires_at = Some(DateTimeWithTimeZone::from(
-            chrono::DateTime::from_timestamp(refresh_expiry_timestamp(&cfg), 0)
+            chrono::DateTime::from_timestamp(refresh_expiry_timestamp(cfg), 0)
                 .ok_or_else(|| ApiError::InternalError("Failed to compute expiry".into()))?,
         ));
 
-        RefreshTokenRepository::create(db, user_id, plain, expires_at)
+        RefreshTokenRepository::create(db, user_id, token_hash, expires_at)
             .await
-            .map_err(|e| {
-                ApiError::InternalError(format!("DB error storing refresh token: {}", e))
-            })?;
+            .map_err(|e| ApiError::InternalError(format!("DB error storing refresh token: {}", e)))?;
 
-        Ok(refresh_token)
+        Ok(plain)
     }
 
-    /// Verify an incoming refresh token, rotate it (issue a new refresh token record),
-    /// and return a newly minted access token + new plain refresh token.
-    ///
-    /// This mirrors the flow implemented in the handlers but centralizes it for reuse.
+    /// Verify an incoming refresh token (by HMAC hash lookup), rotate it, and return
+    /// a new access token + new plain refresh token.
     pub async fn verify_and_rotate_refresh(
         db: &DatabaseConnection,
         incoming_plain: &str,
     ) -> Result<(String, String), ApiError> {
-        // Load all active (non-revoked) tokens and find the matching one by verifying the hash.
-        let all_tokens = RefreshTokenRepository::find_all_active(db)
+        let cfg = JwtConfig::get();
+
+        // Hash the incoming token and look it up directly — O(1) indexed query.
+        let incoming_hash = hash_refresh_token(incoming_plain, cfg)?;
+
+        let record = RefreshTokenRepository::find_active_by_hash(db, &incoming_hash)
             .await
-            .map_err(|e| ApiError::InternalError(e.to_string()))?;
+            .map_err(|e| ApiError::InternalError(e.to_string()))?
+            .ok_or_else(|| ApiError::NotFound("Invalid refresh token".into()))?;
 
-        let mut matching_record = None;
-        for token in all_tokens {
-            if let Ok(true) = is_thesame(&token.token, incoming_plain) {
-                matching_record = Some(token);
-                break;
-            }
+        // Constant-time verification as a second layer (defense in depth)
+        if !verify_refresh_token(incoming_plain, &record.token, cfg)? {
+            return Err(ApiError::NotFound("Invalid refresh token".into()));
         }
-
-        let record =
-            matching_record.ok_or_else(|| ApiError::NotFound("Invalid refresh token".into()))?;
 
         if record.revoked {
             return Err(ApiError::NotFound("Refresh token revoked".into()));
         }
 
         if let Some(exp) = record.expires_at {
-            let now_ts = Utc::now().timestamp();
-            if exp.timestamp() < now_ts {
+            if exp.timestamp() < Utc::now().timestamp() {
                 return Err(ApiError::NotFound("Refresh token expired".into()));
             }
         }
 
-        // Fetch user to obtain current token_version for the JWT
-        let refresh_token = RefreshTokenRepository::find_by_user_id(db, record.user_id)
-            .await
-            .map_err(|e| ApiError::InternalError(e.to_string()))?
-            .ok_or_else(|| ApiError::NotFound("Token Not Found".into()))?;
+        let tv = record.token_version.unwrap_or(0);
+        let access_token = create_jwt(record.user_id, tv, cfg)?;
 
-        let cfg = JwtConfig::get();
-        let access_token = create_jwt(
-            record.user_id,
-            refresh_token.token_version.unwrap_or(0),
-            &cfg,
-        )?;
-
-        // Create a new refresh token and persist it, then revoke the old one.
+        // Issue new refresh token and revoke old one (rotation)
         let new_plain = generate_refresh_token();
-        let new_refresh_token = new_plain.clone();
-        // let new_hash = hash_refresh_token(&new_plain)?;
+        let new_hash = hash_refresh_token(&new_plain, cfg)?;
         let new_expires_at = Some(DateTimeWithTimeZone::from(
-            chrono::DateTime::from_timestamp(refresh_expiry_timestamp(&cfg), 0)
+            chrono::DateTime::from_timestamp(refresh_expiry_timestamp(cfg), 0)
                 .ok_or_else(|| ApiError::InternalError("Failed to compute expiry".into()))?,
         ));
 
-        let _new_record =
-            RefreshTokenRepository::create(db, record.user_id, new_plain, new_expires_at)
-                .await
-                .map_err(|_| ApiError::InternalError("Failed to store refresh token".into()))?;
+        RefreshTokenRepository::create(db, record.user_id, new_hash, new_expires_at)
+            .await
+            .map_err(|_| ApiError::InternalError("Failed to store new refresh token".into()))?;
 
-        let _ = RefreshTokenRepository::revoke_by_id(db, record.id)
+        RefreshTokenRepository::revoke_by_id(db, record.id)
             .await
             .map_err(|_| ApiError::InternalError("Failed to revoke old refresh token".into()))?;
 
-        Ok((access_token, new_refresh_token))
+        Ok((access_token, new_plain))
     }
 
-    /// Revoke a refresh token presented by client (by matching the plain value).
-    /// Returns the user id of the revoked token (useful if caller wants to also
-    /// invalidate access tokens by bumping token_version).
+    /// Revoke a specific refresh token presented by the client.
+    /// Returns the user_id so the caller can also bump token_version.
     pub async fn revoke_refresh_token(
         db: &DatabaseConnection,
         incoming_plain: &str,
     ) -> Result<Uuid, ApiError> {
-        let all_tokens = RefreshTokenRepository::find_all_active(db)
-            .await
-            .map_err(|_| ApiError::InternalError("DB error".to_string()))?;
+        let cfg = JwtConfig::get();
+        let incoming_hash = hash_refresh_token(incoming_plain, cfg)?;
 
-        let mut matching_record = None;
-        for token in all_tokens {
-            if let Ok(true) = is_thesame(&token.token, incoming_plain) {
-                matching_record = Some(token);
-                break;
-            }
+        let record = RefreshTokenRepository::find_active_by_hash(db, &incoming_hash)
+            .await
+            .map_err(|_| ApiError::InternalError("DB error".into()))?
+            .ok_or_else(|| ApiError::NotFound("Invalid refresh token".into()))?;
+
+        // Constant-time check as second layer
+        if !verify_refresh_token(incoming_plain, &record.token, cfg)? {
+            return Err(ApiError::NotFound("Invalid refresh token".into()));
         }
 
-        let record =
-            matching_record.ok_or_else(|| ApiError::NotFound("Invalid refresh token".into()))?;
-
-        let _ = RefreshTokenRepository::revoke_by_id(db, record.id)
+        RefreshTokenRepository::revoke_by_id(db, record.id)
             .await
             .map_err(|_| ApiError::InternalError("Failed to revoke refresh token".into()))?;
 
         Ok(record.user_id)
     }
 
-    /// Revoke all refresh tokens for the given user and return number revoked.
+    /// Revoke all refresh tokens for the given user. Returns count revoked.
     pub async fn revoke_all_for_user(
         db: &DatabaseConnection,
         user_id: Uuid,
     ) -> Result<u64, ApiError> {
-        RefreshTokenRepository::revoke_by_user(db, user_id)
+        RefreshTokenRepository::revoke_all_by_user(db, user_id)
             .await
             .map_err(|e| ApiError::InternalError(format!("DB error revoking tokens: {}", e)))
     }
 
-    /// Delete expired refresh tokens. Returns number deleted.
+    /// Delete expired refresh tokens. Returns count deleted.
     pub async fn cleanup_expired(db: &DatabaseConnection) -> Result<u64, ApiError> {
         RefreshTokenRepository::delete_expired(db)
             .await

@@ -27,6 +27,14 @@ uuid = { version = "1.24.0", features = ["v4"] }
 # Password hashing
 argon2 = "0.5.3"
 
+# Constant-time comparison (prevents timing attacks)
+subtle = "2.6.1"
+
+# Fast token hashing (for refresh token storage)
+hmac = "0.12.1"
+sha2 = "0.10.8"
+hex = "0.4.3"
+
 # JWT
 jsonwebtoken = { version = "11.0.0", features = ["rust_crypto"] }
 

@@ -10,33 +10,24 @@ use chrono::Utc;
 use sea_orm::{DatabaseConnection, Set};
 use uuid::Uuid;
 
-/// Service layer for user-related business logic.
-///
-/// This file adjusts register/login to set password fields directly on the ActiveModel
-/// (so we can use the repository's existing `insert` method) and fixes incorrect
-/// Option handling for password_hash / token_version (they are stored as concrete types
-/// in the current entity).
 pub struct UserService;
 
 impl UserService {
-    /// Register a new user with a password.
-    ///
-    /// Production considerations implemented here:
-    /// - Validate inputs (non-empty, password length)
-    /// - Hash password using Argon2 (delegated via `hash_password`)
-    /// - Ensure email uniqueness (DB unique constraint recommended)
-    /// - Store password hash and initial token_version/is_active on the ActiveModel
+    /// Register a new user with a hashed password.
     pub async fn register_user(
         db: &DatabaseConnection,
         input: CreateUser,
         password: String,
     ) -> Result<Uuid, ApiError> {
-        // Basic validation
         if input.name.trim().is_empty() {
             return Err(ApiError::BadRequest("Name cannot be empty".into()));
         }
         if input.email.trim().is_empty() {
             return Err(ApiError::BadRequest("Email cannot be empty".into()));
+        }
+        // Basic email format validation
+        if !is_valid_email(&input.email) {
+            return Err(ApiError::BadRequest("Invalid email format".into()));
         }
         if password.len() < 8 {
             return Err(ApiError::BadRequest(
@@ -44,7 +35,7 @@ impl UserService {
             ));
         }
 
-        // Check uniqueness
+        // Check email uniqueness
         if UserRepository::find_by_email(db, &input.email)
             .await
             .map_err(|e| ApiError::InternalError(e.to_string()))?
@@ -53,22 +44,17 @@ impl UserService {
             return Err(ApiError::Conflict("Email already exists".into()));
         }
 
-        // Hash password
-        let password_hash = hash_password(&password)?;
-
-        // Prepare ActiveModel for insertion with auth fields set directly.
         let id = Uuid::new_v4();
         let active = ActiveModel {
             id: Set(id),
             name: Set(input.name),
             email: Set(input.email),
-            password_hash: Set(password_hash),
+            password_hash: Set(hash_password(&password)?),
             is_active: Set(Some(true)),
             created_at: Set(Some(Utc::now().into())),
             ..Default::default()
         };
 
-        // Use existing repository insert to persist the model (no insert_with_password helper needed).
         UserRepository::insert(db, active)
             .await
             .map_err(|e| ApiError::InternalError(format!("DB insert failed: {}", e)))?;
@@ -76,14 +62,9 @@ impl UserService {
         Ok(id)
     }
 
-    /// Authenticate a user and return a JWT.
-    ///
-    /// Implementation notes:
-    /// - The repository returns the user's stored password hash and token version.
-    /// - We verify the password using Argon2 (via `verify_password`).
-    /// - On success, we create a signed JWT using `create_jwt`.
-    /// - Token versioning (`tv`) is embedded in the token so that changing a user's
-    ///   `token_version` in the DB can immediately invalidate previously issued tokens.
+    /// Authenticate a user and return a signed JWT.
+    /// The token_version is read from the user's latest refresh token record.
+    /// If no refresh token exists yet (first login), tv defaults to 0.
     pub async fn login(
         db: &DatabaseConnection,
         email: &str,
@@ -95,35 +76,30 @@ impl UserService {
             ));
         }
 
-        // Fetch user (repository returns the full model including password_hash and token_version)
         let user = UserRepository::find_by_email(db, email)
             .await
             .map_err(|e| ApiError::InternalError(e.to_string()))?
-            .ok_or_else(|| ApiError::NotFound("Invalid Email Address".into()))?;
+            // Use a generic message to avoid user enumeration
+            .ok_or_else(|| ApiError::BadRequest("Invalid email or password".into()))?;
 
-        // Fetch refresh_token
-        let refresh_token = RefreshTokenRepository::find_by_user_id(db, user.id)
-            .await
-            .map_err(|e| ApiError::InternalError(e.to_string()))?
-            .ok_or_else(|| ApiError::NotFound("No refresh token found for user".into()))?;
-
-        // Extract password_hash and token_version directly (concrete types in entity)
-        let stored_hash: String = user.password_hash;
-        let tv: i32 = refresh_token.token_version.unwrap_or(0);
-
-        // Verify password
-        let ok = verify_password(&stored_hash, password)?;
-        if !ok {
-            return Err(ApiError::NotFound("Invalid Password".into()));
+        if user.is_active == Some(false) {
+            return Err(ApiError::BadRequest("Account is disabled".into()));
         }
 
-        // Build auth config from env (JWT secret, expiry)
-        let cfg = JwtConfig::get();
+        if !verify_password(&user.password_hash, password)? {
+            return Err(ApiError::BadRequest("Invalid email or password".into()));
+        }
 
-        // Create token
-        let token = create_jwt(user.id, tv, &cfg)?;
+        // Read current token_version from refresh_tokens (defaults to 0 if none yet)
+        let tv = RefreshTokenRepository::find_by_user_id(db, user.id)
+            .await
+            .map_err(|e| ApiError::InternalError(e.to_string()))?
+            .and_then(|rt| rt.token_version)
+            .unwrap_or(0);
 
-        // Update the last_login column on users table
+        let token = create_jwt(user.id, tv, JwtConfig::get())?;
+
+        // Update last_login timestamp
         let active = ActiveModel {
             id: Set(user.id),
             last_login: Set(Some(Utc::now().into())),
@@ -137,35 +113,26 @@ impl UserService {
     }
 
     pub async fn list_users(db: &DatabaseConnection) -> Result<Vec<UserResponse>, ApiError> {
-        let users = UserRepository::find_all(db)
+        UserRepository::find_all(db)
             .await
-            .map_err(|_| ApiError::InternalError("DB error".to_string()))?;
-
-        Ok(users
-            .into_iter()
-            .map(|m| UserResponse {
-                id: m.id,
-                name: m.name,
-                email: m.email,
+            .map_err(|_| ApiError::InternalError("DB error".into()))
+            .map(|users| {
+                users
+                    .into_iter()
+                    .map(|m| UserResponse { id: m.id, name: m.name, email: m.email })
+                    .collect()
             })
-            .collect())
     }
 
     pub async fn get_user(db: &DatabaseConnection, id: Uuid) -> Result<UserResponse, ApiError> {
         if id == Uuid::nil() {
             return Err(ApiError::BadRequest("Invalid UUID".into()));
         }
-
-        let user = UserRepository::find_by_id(db, id)
+        UserRepository::find_by_id(db, id)
             .await
-            .map_err(|_| ApiError::InternalError("DB error".to_string()))?
-            .ok_or_else(|| ApiError::NotFound(format!("User {} not found", id)))?;
-
-        Ok(UserResponse {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-        })
+            .map_err(|_| ApiError::InternalError("DB error".into()))?
+            .map(|u| UserResponse { id: u.id, name: u.name, email: u.email })
+            .ok_or_else(|| ApiError::NotFound(format!("User {} not found", id)))
     }
 
     pub async fn update_user(
@@ -175,7 +142,7 @@ impl UserService {
     ) -> Result<UserResponse, ApiError> {
         let existing = UserRepository::find_by_id(db, id)
             .await
-            .map_err(|_| ApiError::InternalError("DB error".to_string()))?
+            .map_err(|_| ApiError::InternalError("DB error".into()))?
             .ok_or_else(|| ApiError::NotFound(format!("User {} not found", id)))?;
 
         let mut active: ActiveModel = existing.into();
@@ -191,9 +158,12 @@ impl UserService {
             if email.trim().is_empty() {
                 return Err(ApiError::BadRequest("Email cannot be empty".into()));
             }
+            if !is_valid_email(&email) {
+                return Err(ApiError::BadRequest("Invalid email format".into()));
+            }
             if UserRepository::find_by_email(db, &email)
                 .await
-                .map_err(|_| ApiError::InternalError("DB error".to_string()))?
+                .map_err(|_| ApiError::InternalError("DB error".into()))?
                 .filter(|u| u.id != id)
                 .is_some()
             {
@@ -202,55 +172,67 @@ impl UserService {
             active.email = Set(email);
         }
 
+        active.updated_at = Set(Some(Utc::now().into()));
+
         let updated = UserRepository::update(db, active)
             .await
-            .map_err(|_| ApiError::InternalError("DB update failed".to_string()))?;
+            .map_err(|_| ApiError::InternalError("DB update failed".into()))?;
 
-        Ok(UserResponse {
-            id: updated.id,
-            name: updated.name,
-            email: updated.email,
-        })
+        Ok(UserResponse { id: updated.id, name: updated.name, email: updated.email })
     }
 
     pub async fn delete_user(db: &DatabaseConnection, id: Uuid) -> Result<(), ApiError> {
         if id == Uuid::nil() {
             return Err(ApiError::BadRequest("Invalid UUID".into()));
         }
-
         let rows = UserRepository::delete(db, id)
             .await
-            .map_err(|_| ApiError::InternalError("DB delete failed".to_string()))?;
+            .map_err(|_| ApiError::InternalError("DB delete failed".into()))?;
 
         if rows == 0 {
             return Err(ApiError::NotFound(format!("User {} not found", id)));
         }
-
         Ok(())
     }
 
-    /// Increment a user's token_version to invalidate all issued access tokens.
-    /// This is useful for logout or security events (password change, etc).
+    /// Increment the token_version on the user's active refresh token record to
+    /// invalidate all outstanding access tokens for this user.
     pub async fn increment_token_version(
         db: &DatabaseConnection,
-        id: Uuid,
+        user_id: Uuid,
     ) -> Result<(), ApiError> {
-        let refresh_token = RefreshTokenRepository::find_by_user_id(db, id)
+        // Find all non-revoked tokens and bump their version
+        use crate::shared::models::refresh_tokens;
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+        let tokens = refresh_tokens::Entity::find()
+            .filter(refresh_tokens::Column::UserId.eq(user_id))
+            .filter(refresh_tokens::Column::Revoked.eq(false))
+            .all(db)
             .await
-            .map_err(|_| ApiError::InternalError("DB error".to_string()))?
-            .ok_or_else(|| ApiError::NotFound(format!("User {} not found", id)))?;
+            .map_err(|e| ApiError::InternalError(e.to_string()))?;
 
-        let tk_version = refresh_token.token_version.unwrap_or(0);
-
-        let mut active: RefreshTokenActiveModel = refresh_token.into();
-        active.token_version = Set(Some(tk_version + 1));
-
-        RefreshTokenRepository::update(db, active)
-            .await
-            .map_err(|err| ApiError::InternalError(err.to_string()))?;
+        for token in tokens {
+            let new_version = token.token_version.unwrap_or(0) + 1;
+            let mut active: RefreshTokenActiveModel = token.into();
+            active.token_version = Set(Some(new_version));
+            RefreshTokenRepository::update(db, active)
+                .await
+                .map_err(|e| ApiError::InternalError(e.to_string()))?;
+        }
 
         Ok(())
     }
+}
 
-    // Similarly implement update, delete, get, list with validation
+/// Basic email format check: must contain exactly one '@' with non-empty local and domain parts,
+/// and the domain must contain a '.'.
+fn is_valid_email(email: &str) -> bool {
+    let parts: Vec<&str> = email.splitn(2, '@').collect();
+    if parts.len() != 2 {
+        return false;
+    }
+    let local = parts[0];
+    let domain = parts[1];
+    !local.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.')
 }

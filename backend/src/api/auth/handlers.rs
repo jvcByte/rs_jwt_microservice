@@ -188,8 +188,11 @@ pub async fn logout_all(
     })))
 }
 
-/// Admin endpoint to clean up expired refresh tokens.
-pub async fn cleanup_expired_tokens(state: web::Data<AppState>) -> Result<HttpResponse, ApiError> {
+/// Admin endpoint to clean up expired refresh tokens. Requires authentication.
+pub async fn cleanup_expired_tokens(
+    _user: AuthenticatedUser,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse, ApiError> {
     let deleted = AuthService::cleanup_expired(&state.db)
         .await
         .map_err(|e| e)?;
