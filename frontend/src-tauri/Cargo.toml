@@ -1,0 +1,36 @@
+[package]
+name = "rs_jwt_microservice"
+version = "0.1.0"
+description = "A production-ready REST API microservice template built with Rust's Actix Web framework"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jvcByte/peeng"
+authors = ["jvcByte <jvc8463@gmail.com>"]
+edition = "2021"
+
+[profile.dev]
+incremental = true
+
+[profile.release]
+codegen-units = 1 # Allows LLVM to perform better optimization.
+lto = true # Enables link-time-optimizations.
+opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
+panic = "abort" # Higher performance by disabling panic handlers.
+strip = true # Ensures debug symbols are removed.
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "rs_jwt_microservice_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

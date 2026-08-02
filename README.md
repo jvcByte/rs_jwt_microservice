@@ -1,5 +1,9 @@
 # rs_jwt_microservice
 
+<div align="center">
+  <img src="assets/thumbnail.png" alt="rs_jwt_microservice preview" width="600" />
+</div>
+
 A production-ready REST API microservice template built with Rust's Actix Web framework. Comes with JWT authentication, user management, and PostgreSQL integration out of the box — a solid starting point for building scalable web applications.
 
 ## Monorepo Structure
