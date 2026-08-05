@@ -1,7 +1,7 @@
 # rs_jwt_microservice
 
 <div align="center">
-  <img src="assets/thumbnail.png" alt="rs_jwt_microservice preview" width="600" />
+  <img src="assets/landing.png" alt="landing_page_preview" width="600" />
 </div>
 
 A production-ready REST API microservice template built with Rust's Actix Web framework. Comes with JWT authentication, user management, and PostgreSQL integration out of the box — a solid starting point for building scalable web applications.
@@ -50,3 +50,22 @@ Licensed under either [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your
 ## Author
 
 **jvcByte** - [jvc8463@gmail.com](mailto:jvc8463@gmail.com)
+
+## Platform UI
+### Web
+
+<div align="center">
+  <img src="assets/web.png" alt="web_dashbaord_preview" width="600" />
+</div>
+
+### Mobile
+
+<div align="center">
+  <img src="assets/mobile.png" alt="mobile_desktop_preview" width="600" />
+</div>
+
+### Desktop
+
+<div align="center">
+  <img src="assets/desktop.png" alt="desktop_dashboard_preview" width="600" />
+</div>
