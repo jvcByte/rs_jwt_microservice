@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/PasswordInput";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
@@ -52,9 +53,8 @@ export function LoginPage() {
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="password">Password</Label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 placeholder="••••••••"
                 autoComplete="current-password"
                 required
@@ -69,7 +69,7 @@ export function LoginPage() {
             </Button>
             <p className="text-center text-sm text-muted-foreground">
               No account?{" "}
-              <Link to={isApp ? "/register" : "/register"} className="underline underline-offset-4 hover:text-foreground">
+              <Link to="/register" className="underline underline-offset-4 hover:text-foreground">
                 Create one
               </Link>
             </p>

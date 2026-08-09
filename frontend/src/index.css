@@ -124,11 +124,6 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* mobile safe areas */
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
   }
   /* Tauri desktop: disable text selection & context menu feel */
   [data-platform="desktop"] {
@@ -211,14 +206,6 @@
 
 /* ── Platform-specific globals ────────────────────────────────────────────── */
 
-/* Mobile safe areas (notch / home indicator / status bar) */
-body {
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
-}
-
 /* Desktop: disable drag-to-select outside inputs */
 [data-platform="desktop"] {
   user-select: none;
@@ -231,7 +218,18 @@ body {
   -webkit-user-select: text;
 }
 
-/* Mobile bottom tab bar respects home indicator */
+/* Safe-area insets. On Android (targetSdk 35+ forces edge-to-edge) the WebView
+   never reports the status/nav bars via env(), so MainActivity injects their
+   sizes as --android-inset-*. iOS/web have no such injection and fall back to
+   env(safe-area-inset-*). Layouts consume the resolved --inset-* vars. */
+:root {
+  --inset-top: var(--android-inset-top, env(safe-area-inset-top, 0px));
+  --inset-right: var(--android-inset-right, env(safe-area-inset-right, 0px));
+  --inset-bottom: var(--android-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --inset-left: var(--android-inset-left, env(safe-area-inset-left, 0px));
+}
+
+/* Mobile bottom tab bar respects home indicator / nav bar */
 .mobile-tab-bar {
-  padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  padding-bottom: max(var(--inset-bottom), 0.5rem);
 }

@@ -4,6 +4,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -14,6 +15,18 @@ const navItems = [
 
 export function DesktopLayout() {
   const { user } = useAuth();
+
+  // Auth pages (login/register) render chrome-free — no sidebar.
+  if (!user) {
+    return (
+      <div className="relative min-h-screen w-screen overflow-y-auto bg-background">
+        <div className="absolute right-3 top-3 z-10">
+          <ThemeToggle />
+        </div>
+        <Outlet />
+      </div>
+    );
+  }
 
   const initials = user?.name
     ?.split(" ")
@@ -53,6 +66,7 @@ export function DesktopLayout() {
         ))}
 
         <div className="mt-auto flex flex-col items-center gap-2">
+          <ThemeToggle />
           <LogoutButton />
           <Avatar className="h-8 w-8 cursor-default">
             <AvatarFallback className="text-xs">{initials}</AvatarFallback>

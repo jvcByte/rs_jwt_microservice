@@ -1,12 +1,13 @@
 import { Outlet, Link, useLocation } from "react-router";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function WebLayout() {
   const { pathname } = useLocation();
   const isAuthPage = pathname === "/login" || pathname === "/register";
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="relative min-h-screen flex flex-col">
       {/* Top nav — hidden on auth pages */}
       {!isAuthPage && (
         <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur">
@@ -15,6 +16,7 @@ export function WebLayout() {
               AppTemplate
             </Link>
             <nav className="flex items-center gap-2">
+              <ThemeToggle />
               <Button variant="ghost" size="sm" asChild>
                 <Link to="/login">Sign in</Link>
               </Button>
@@ -24,6 +26,11 @@ export function WebLayout() {
             </nav>
           </div>
         </header>
+      )}
+      {isAuthPage && (
+        <div className="absolute right-3 top-3 z-10">
+          <ThemeToggle />
+        </div>
       )}
       <main className="flex-1">
         <Outlet />
