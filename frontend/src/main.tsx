@@ -2,11 +2,11 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider, createBrowserRouter } from "react-router";
 import { ThemeProvider } from "next-themes";
-import { Toaster } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthProvider } from "@/context/AuthContext";
-import { platform } from "@/lib/platform";
-import { routes } from "@/routes";
+import { Toaster } from "@/shared/components/ui/sonner";
+import { TooltipProvider } from "@/shared/components/ui/tooltip";
+import { AuthProvider } from "@/features/auth";
+import { platform } from "@/shared/lib/platform";
+import { routes } from "@/app/routes";
 import "@/index.css";
 
 document.documentElement.setAttribute("data-platform", platform);
